@@ -1,0 +1,42 @@
+services:
+  foxglove:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    image: modalai-voxl2-target-follow:latest
+    container_name: foxglove_bridge
+    network_mode: host
+    ipc: host
+    environment:
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-42}
+    command: >
+      bash -c "
+      source /opt/ros/humble/setup.bash &&
+      source /ros2_ws/install/setup.bash &&
+      ros2 launch foxglove_bridge foxglove_bridge_launch.xml port:=8765
+      "
+
+  target_tracker:
+    image: modalai-voxl2-target-follow:latest
+    container_name: target_tracker
+    network_mode: host
+    ipc: host
+    privileged: true
+    depends_on:
+      - foxglove
+    environment:
+      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-42}
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix
+      - /dev:/dev
+    command: >
+      bash -c "
+      source /opt/ros/humble/setup.bash &&
+      source /ros2_ws/install/setup.bash &&
+      ros2 run target_follow_demo target_follow_node
+      --ros-args
+      -p image_topic:=${IMAGE_TOPIC:-/hires/image_raw}
+      -p display_window:=${DISPLAY_WINDOW:-true}
+      "
