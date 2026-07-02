@@ -1,4 +1,4 @@
-# Autonomous Drone Platform - ROS 2 Repository
+# Autonomous Drone Platform - Repository
 
 ## Overview
 
