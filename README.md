@@ -1,4 +1,4 @@
-# Dsimetric Space ROS Autonomy Workspace
+# Dsi Autonomy Workspace
 
 ## Overview
 
