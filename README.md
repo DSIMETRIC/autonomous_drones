@@ -1,459 +1,192 @@
-# Dsi Autonomy Workspace
+# ModalAI VOXL2 ROS 2 Target Follow Demo
 
-## Overview
+Ready-to-run ROS 2 package for manual target selection and visual tracking on ModalAI VOXL2 using OpenCV tracking, ROS 2, Docker, and Foxglove.
 
-This repository defines a modular Space ROS autonomy workspace for an intelligent drone platform. It is organized around separated sensor drivers, perception services, target tracking, target locking for monitoring and identification, navigation, visual navigation, collision avoidance, mission planning, safety management, certification monitoring, simulation, and external integrations.
+## What This Package Provides
 
-The architecture is inspired by a Perceptual Element Ensemble Pipeline approach: perception capabilities are built as modular elements, each implemented as a ROS 2 node or package, communicating through standardized topics, services, and actions over DDS.
+- ROS 2 package: `target_follow_demo`
+- Node: `target_follow_node`
+- Dockerfile
+- Docker Compose deployment
+- Foxglove bridge
+- Manual target selection with OpenCV ROI
+- Target tracking output image
+- Target lock status topic
+- Gimbal / servo command topic
 
-The design goal is to provide a reusable and scalable foundation that can be applied across small drones, medium drones, large UAVs, Digital Twin environments, and validation pipelines.
-
-## Key Design Goals
-
-- Modular base architecture for multiple vehicle classes and mission scenarios.
-- Flexible framework where the core system can grow as project requirements evolve.
-- Scalable framework for adding sensors, AI nodes, tracking modules, and mission services.
-- Maintainable package layout with clear ownership by subsystem.
-- Portable operator-facing tooling and reusable ground-control integrations.
-- Easy data access for live quality control, offline replay, rosbag validation, and regression testing.
-- ROS 2 / DDS communication model with loosely coupled nodes and secure message bus capability.
-- Reusable perception elements that can be swapped across algorithms while preserving standardized outputs.
-- Support for multi-camera fusion, sensor fusion, scene graph generation, target tracking, and visual AI descriptions.
-
-## Repository Structure
+## Architecture
 
 ```text
-src/
-
-├── sensors/
-│   ├── cameras/
-│   ├── lidar/
-│   ├── radar/
-│   ├── gps/
-│   └── imu/
-
-├── core_space_packages/
-│   ├── perception/
-│   ├── target_tracking/
-│   ├── target_locking/
-│   ├── navigation/
-│   ├── visual_navigation/
-│   ├── collision_avoidance/
-│   ├── mission_planning/
-│   ├── safety_manager/
-│   ├── certification_monitor/
-│   └── mavlink_bridge/
-
-├── simulation/
-│   ├── digital_twin/
-│   ├── rosbag_database/
-│   └── validation_tools/
-
-└── external/
-    ├── px4_msgs/
-    ├── mavros/
-    ├── realsense_ros/
-    ├── velodyne_driver/
-    ├── ouster_ros/
-    ├── radar_sdk/
-    └── unreal_ros_bridge/
+VOXL Camera
+    |
+    v
+voxl-camera-server
+    |
+    v
+voxl-mpa-to-ros2
+    |
+    v
+/hires/image_raw or /tracking/image_raw
+    |
+    v
+target_follow_node
+    |
+    +--> /camera/tracked_image
+    +--> /target_lock/status
+    +--> /camera_follow/cmd
+    |
+    v
+PX4 / Gimbal / Servo Controller
 ```
 
-## Architecture Concept
+## Topics
 
-The software is a distributed framework of self-contained ROS 2 processes called nodes. Nodes discover each other and communicate at runtime using DDS. Each subsystem owns a specific portion of autonomy functionality, such as camera acquisition, AI detection, tracking, state estimation, mission planning, or safety monitoring.
+### Subscribed
 
-Nodes communicate by publishing or subscribing to topics and by exposing services or actions for command-oriented behavior. This separates concerns while allowing the system to make complex decisions using shared, standardized information.
+| Topic | Type | Description |
+|---|---|---|
+| `/hires/image_raw` | `sensor_msgs/Image` | Default VOXL2 camera image topic |
+| `/tracking/image_raw` | `sensor_msgs/Image` | Alternative VOXL2 tracking camera topic |
 
-## Sensors Layer
+### Published
 
-### `src/sensors/cameras`
+| Topic | Type | Description |
+|---|---|---|
+| `/camera/tracked_image` | `sensor_msgs/Image` | Camera image with tracking overlay |
+| `/target_lock/status` | `std_msgs/String` | `WAITING_FOR_TARGET`, `LOCKED`, `TRACKING`, `LOST` |
+| `/camera_follow/cmd` | `geometry_msgs/Twist` | Pan/tilt command output |
 
-Camera acquisition and calibration packages.
+## Prerequisites on VOXL2
 
-Supported sensor types:
+Check VOXL services:
 
-- RGB cameras
-- EO cameras
-- IR cameras
-- Thermal cameras
-- Stereo cameras
-- Zoom cameras
+```bash
+voxl-inspect-services
+voxl-inspect-cam
+```
 
-Expected outputs:
+Install and run the VOXL ROS bridge if needed:
 
-- `sensor_msgs/msg/Image`
-- `sensor_msgs/msg/CameraInfo`
-- Rectified image topics
-- Camera diagnostics
+```bash
+apt-get update
+apt-get install -y voxl-mpa-to-ros2
+source /opt/ros/foxy/setup.bash
+ros2 run voxl_mpa_to_ros2 voxl_mpa_to_ros2
+```
 
-### `src/sensors/lidar`
+Verify image topics:
 
-LiDAR acquisition and point cloud preprocessing.
+```bash
+ros2 topic list
+ros2 topic hz /hires/image_raw
+```
 
-Responsibilities:
+## Build and Run with Docker Compose
 
-- LiDAR driver integration
-- Point cloud filtering
-- Ground segmentation
-- Obstacle cloud generation
-- Calibration support
+From the repository root:
 
-Expected outputs:
+```bash
+xhost +local:docker
+docker compose up --build
+```
 
-- `sensor_msgs/msg/PointCloud2`
-- Filtered point clouds
-- Obstacle point clouds
+The compose stack starts:
 
-### `src/sensors/radar`
+- `foxglove_bridge`
+- `target_tracker`
 
-Radar acquisition and radar object reporting.
+## Choose Camera Topic
 
-Responsibilities:
+Default:
 
-- Radar SDK interface
-- Moving object detection
-- Range / range-rate extraction
-- Radar track publication
+```bash
+docker compose up --build
+```
 
-Expected outputs:
+Use tracking camera instead:
 
-- Radar detections
-- Radar tracks
-- Radar diagnostics
+```bash
+IMAGE_TOPIC=/tracking/image_raw docker compose up --build
+```
 
-### `src/sensors/gps`
+Disable OpenCV display window:
 
-GNSS and positioning integration.
+```bash
+DISPLAY_WINDOW=false docker compose up --build
+```
 
-Responsibilities:
+## Select a Target
 
-- GNSS data acquisition
-- RTK support
-- Time synchronization
-- Position quality monitoring
+When the OpenCV window appears:
 
-### `src/sensors/imu`
+1. Press `ENTER` or `s` to start selection.
+2. Drag a box around the target.
+3. Press `ENTER` to confirm.
+4. The tracker publishes status and commands.
 
-Inertial measurement integration.
+Controls:
 
-Responsibilities:
+```text
+ENTER or s  Start target selection
+r           Reselect target
+q           Quit
+```
 
-- Acceleration and angular velocity
-- Orientation support
-- Time alignment
-- Sensor calibration
+## Foxglove
 
-## Core Space Packages
+Foxglove bridge listens on port `8765`.
 
-### `src/core_space_packages/perception`
+Connect from Foxglove Desktop:
 
-The perception package contains AI nodes and perception services that convert raw sensor data into actionable scene understanding.
+```text
+ws://VOXL_IP:8765
+```
 
-Responsibilities:
+Recommended panels:
 
-- AI object detection
-- Object classification
-- Semantic segmentation
-- Sensor fusion for perception
-- Scene graph construction
-- LLM visual description
-- Standardized perception messages
+| Panel | Topic |
+|---|---|
+| Image | `/camera/tracked_image` |
+| Raw Messages | `/target_lock/status` |
+| Raw Messages | `/camera_follow/cmd` |
 
-Example nodes:
+## Gimbal / Servo Mapping
 
-- `object_detection_node`
-- `classification_node`
-- `segmentation_node`
-- `scene_graph_builder_node`
-- `llm_visual_description_node`
-- `perception_health_monitor_node`
+The node publishes `geometry_msgs/Twist` on `/camera_follow/cmd`.
 
-Outputs:
+```text
+angular.z -> pan
+angular.y -> tilt
+```
 
-- Object detections
-- Object classes
-- Scene graph
-- Visual scene descriptions
-- Perception confidence
-- Perception diagnostics
+Connect this topic to:
 
-### `src/core_space_packages/target_tracking`
+- ModalAI gimbal node
+- PX4 offboard controller
+- Servo controller
+- Custom flight logic
 
-Tracks detected objects over time and maintains persistent identities.
-
-Responsibilities:
-
-- Multi-object tracking
-- Tracklet generation
-- Track ID management
-- Data association
-- Trajectory prediction
-- Multi-camera track continuity
-
-Example nodes:
-
-- `multi_object_tracker_node`
-- `tracklet_manager_node`
-- `data_association_node`
-- `trajectory_prediction_node`
-
-Outputs:
-
-- Track IDs
-- Track confidence
-- Track state
-- Velocity and heading
-- Predicted trajectory
-
-### `src/core_space_packages/target_locking`
-
-First implementation module.
-
-This package supports operator-selected or AI-suggested target locking for monitoring and identification workflows.
-
-Workflow:
-
-1. Operator selects a target or AI proposes a candidate.
-2. System confirms the target using perception and tracking.
-3. Tracklet window is initialized.
-4. Target lock is maintained with confidence scoring.
-5. Re-identification is performed if the target is partially occluded or changes camera view.
-6. System provides lock status, track state, and confidence to the operator interface.
-
-Example nodes:
-
-- `target_selection_node`
-- `auto_lock_candidate_node`
-- `target_lock_manager_node`
-- `tracklet_window_node`
-- `reidentification_node`
-- `lock_confidence_monitor_node`
-
-Outputs:
-
-- Target lock status
-- Selected track ID
-- Lock confidence
-- Lock mode: manual or automatic
-- Re-identification status
-
-Initial implementation plan:
-
-- Week 1: Prototype target selection, detection pipeline, and tracklet window.
-- Week 2: Implement target locking, unit tests, and multi-camera support.
-- Week 3: Software-in-the-loop testing with simulated camera feeds and rosbags.
-- Week 4: Prepare deployment package for drone testing.
-
-### `src/core_space_packages/navigation`
-
-Global navigation and state estimation.
-
-Responsibilities:
-
-- Waypoint navigation
-- Route following
-- State estimation
-- GNSS integration
-- Return-to-base behavior
-- Navigation health monitoring
-
-### `src/core_space_packages/visual_navigation`
-
-Visual and GNSS-denied navigation.
-
-Responsibilities:
-
-- Visual odometry
-- Visual-inertial odometry
-- SLAM
-- Landmark localization
-- Map matching
-- Camera / LiDAR / IMU fusion
-
-### `src/core_space_packages/collision_avoidance`
-
-Obstacle detection and safe trajectory generation.
-
-Responsibilities:
-
-- Static obstacle avoidance
-- Dynamic obstacle prediction
-- Safe corridor generation
-- Local trajectory planning
-- Geofence and no-fly-zone checks
-
-### `src/core_space_packages/mission_planning`
-
-Mission planning and execution.
-
-Responsibilities:
-
-- Mission upload
-- Behavior tree execution
-- Task scheduling
-- Objective prioritization
-- Adaptive re-planning
-- Mission state reporting
-
-### `src/core_space_packages/safety_manager`
-
-Safety-critical monitoring and failsafe logic.
-
-Responsibilities:
-
-- Vehicle health monitoring
-- Battery monitoring
-- Geofence enforcement
-- Emergency landing
-- Return-to-base trigger
-- Safety interlocks
-
-### `src/core_space_packages/certification_monitor`
-
-Certification-readiness and assurance support.
-
-Responsibilities:
-
-- Requirements traceability
-- Test coverage monitoring
-- Validation evidence collection
-- SIL/HIL status reporting
-- Safety case evidence
-- Certification artifact organization
-
-### `src/core_space_packages/mavlink_bridge`
-
-ROS 2 to MAVLink integration.
-
-Responsibilities:
-
-- PX4 / ArduPilot telemetry
-- Command bridge
-- Mission upload
-- Vehicle state monitoring
-- Autopilot health checks
-
-## Simulation
-
-### `src/simulation/digital_twin`
-
-Digital Twin integration for simulation and validation.
-
-Responsibilities:
-
-- Simulated sensors
-- Scenario playback
-- Environment modeling
-- Mission rehearsal
-- Synthetic data generation
-
-### `src/simulation/rosbag_database`
-
-Rosbag2 dataset management.
-
-Responsibilities:
-
-- Dataset storage
-- Replay tooling
-- Scenario library
-- Ground truth metadata
-- Regression testing datasets
-
-### `src/simulation/validation_tools`
-
-Validation support tooling.
-
-Responsibilities:
-
-- Model-in-the-loop
-- Software-in-the-loop
-- Hardware-in-the-loop
-- Vehicle-in-the-loop
-- Flight test metrics
-
-## External Integrations
-
-### `src/external/px4_msgs`
-
-PX4 message definitions.
-
-### `src/external/mavros`
-
-MAVROS integration.
-
-### `src/external/realsense_ros`
-
-Intel RealSense camera integration.
-
-### `src/external/velodyne_driver`
-
-Velodyne LiDAR integration.
-
-### `src/external/ouster_ros`
-
-Ouster LiDAR integration.
-
-### `src/external/radar_sdk`
-
-Radar vendor SDK wrapper.
-
-### `src/external/unreal_ros_bridge`
-
-Unreal Engine / ROS bridge.
-
-## Build Instructions
+## Native ROS 2 Build
 
 ```bash
 source /opt/ros/humble/setup.bash
-cd dsimetric_space_ros_autonomy_ws
 colcon build --symlink-install
 source install/setup.bash
+ros2 run target_follow_demo target_follow_node --ros-args -p image_topic:=/hires/image_raw
 ```
 
-## Suggested Development Workflow
+## Future Upgrades
 
-```bash
-# Build all packages
-colcon build --symlink-install
+This package can later be extended with:
 
-# Build one package
-colcon build --packages-select core_space_packages_target_locking
-
-# Run tests
-colcon test
-colcon test-result --verbose
-
-# Source workspace
-source install/setup.bash
-```
-
-## Validation Workflow
-
-1. Unit Tests
-2. Rosbag Replay
-3. Software-in-the-loop
-4. Digital Twin
-5. Hardware-in-the-loop
-6. Drone Integration Testing
-7. Flight Validation
-8. Certification Evidence Collection
-
-## Technology Stack
-
-- ROS 2
-- Space ROS concepts
-- DDS
-- MAVLink
-- PX4 / ArduPilot
-- OpenCV
-- PyTorch
-- TensorFlow
+- YOLOv8
+- YOLO-NAS
 - TensorRT
-- Unreal Engine
-- Rosbag2
-- Docker
+- DeepSORT
+- ByteTrack
+- Object re-identification
+- Multi-target tracking
+- Visual navigation
+- Sensor fusion
 
-## Mission Statement
-
-Build a modular, reusable, scalable, and testable ROS 2 autonomy workspace for perception, tracking, target locking, navigation, collision avoidance, mission planning, safety monitoring, simulation, and validation across multiple drone platforms.
+The ROS 2 topic interface stays the same, so the architecture can evolve without redesigning the whole autonomy stack.
