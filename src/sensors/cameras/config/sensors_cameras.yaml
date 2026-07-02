@@ -1,0 +1,6 @@
+sensors_cameras:
+  ros__parameters:
+    enabled: true
+    update_rate_hz: 30.0
+    frame_id: "base_link"
+    use_sim_time: false
